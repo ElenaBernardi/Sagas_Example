@@ -1,0 +1,88 @@
+version: '3'
+services:
+  ####### MySQL ########
+  mysql:
+    build: MySQL
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_USER=mysqluser
+      - MYSQL_PASSWORD=mysqlpw
+  ##### CDC SERVICE ####
+  cdcservice:
+    image: eventuateio/eventuate-tram-cdc-mysql-service:0.10.0.RELEASE
+    ports:
+      - "8099:8080"
+    depends_on:
+      - mysql
+      - kafka
+      - zookeeper
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql/eventuate
+      SPRING_DATASOURCE_USERNAME: mysqluser
+      SPRING_DATASOURCE_PASSWORD: mysqlpw
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.jdbc.Driver
+      EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EVENTUATELOCAL_ZOOKEEPER_CONNECTION_STRING: zookeeper:2181
+      EVENTUATELOCAL_CDC_DB_USER_NAME: root
+      EVENTUATELOCAL_CDC_DB_PASSWORD: rootpassword
+      EVENTUATELOCAL_CDC_BINLOG_CLIENT_ID: 1234567890
+
+  ###    ZOOKEEPER    ####
+  zookeeper:
+    image: eventuateio/eventuateio-local-zookeeper:0.22.0.RELEASE
+    ports:
+      - 2181:2181
+
+  ###    KAFKA    ####
+  kafka:
+    image: eventuateio/eventuateio-local-kafka:0.22.0.RELEASE
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      - ADVERTISED_HOST_NAME=${DOCKER_HOST_IP}
+      - KAFKA_HEAP_OPTS=-Xmx192m -Xms192m
+      - ZOOKEEPER_SERVERS=zookeeper:2181
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  #### CONSUMER_SERVICE ####
+  consumer:
+    build: Consumer
+    ports:
+      - 8082:8080
+    links:
+      - mysql
+      - kafka
+      - zookeeper
+      - cdcservice
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql/consumers
+      SPRING_DATASOURCE_USERNAME: mysqluser
+      SPRING_DATASOURCE_PASSWORD: mysqlpw
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+
+      EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EVENTUATELOCAL_ZOOKEEPER_CONNECTION_STRING: zookeeper:2181
+
+  ###    ORDER-SERVICE    ####
+  order-service:
+    build: Order
+    ports:
+      - 8083:8080
+    links:
+      - mysql
+      - kafka
+      - zookeeper
+      - cdcservice
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql/orders
+      SPRING_DATASOURCE_USERNAME: mysqluser
+      SPRING_DATASOURCE_PASSWORD: mysqlpw
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+
+      EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EVENTUATELOCAL_ZOOKEEPER_CONNECTION_STRING: zookeeper:2181
+
